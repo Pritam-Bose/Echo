@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Echo</title>
+  <link rel="stylesheet" href="/ui/chat.css">
+</head>
+<body>
+
+  <textarea id="dream" placeholder="Describe your dream..."></textarea>
+  <br>
+  <button onclick="send()">Reflect</button>
+
+  <div class="voice-selector">
+    <span class="voice-label">Voice</span>
+    <label>
+      <input type="radio" name="voice" value="she" checked>
+      She
+    </label>
+    <label>
+      <input type="radio" name="voice" value="he">
+      He
+    </label>
+  </div>
+
+  <div id="chat"></div>
+
+  <input
+    id="chatInput"
+    placeholder="Write a thought or question..."
+    onkeydown="if(event.key==='Enter') sendChat()"
+  />
+  <button onclick="sendChat()">Send</button>
+
+  <script src="/ui/chat.js"></script>
+</body>
+</html>

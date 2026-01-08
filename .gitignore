@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Models & weights
+models/*.gguf
+models/**/*.gguf
+
+# Generated audio
+ui/audio/*.wav
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
