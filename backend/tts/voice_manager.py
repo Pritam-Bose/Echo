@@ -8,7 +8,7 @@ Hard routing rules:
 """
 
 from typing import Optional
-from backend.tts.edge_voice import synthesize_edge
+from tts.edge_voice import synthesize_edge
 
 FEMALE_VOICE = "en-US-JennyNeural"
 MALE_VOICE = "en-IN-PrabhatNeural"

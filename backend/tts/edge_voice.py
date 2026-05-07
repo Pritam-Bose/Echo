@@ -3,7 +3,7 @@ import os
 import uuid
 import subprocess
 
-AUDIO_DIR = os.path.join("frontend", "audio")
+AUDIO_DIR = os.path.join("static", "audio")
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
 
@@ -26,4 +26,4 @@ def synthesize_edge(text: str, voice: str) -> str:
 
     # Run and raise on error
     subprocess.run(cmd, check=True)
-    return f"/ui/audio/{filename}"
+    return f"/audio/{filename}"

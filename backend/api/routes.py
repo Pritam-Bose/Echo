@@ -4,10 +4,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
-from backend.api.schemas import DreamInput, DreamResponse, Message, ChatInput
-from backend.core.analyzer.emotion_extractor import extract_emotions
-from backend.core.analyzer.dream_classifier import classify_dream
-from backend.core.composer.response_builder import build_response
+from api.schemas import DreamInput, DreamResponse, Message, ChatInput
+from core.analyzer.emotion_extractor import extract_emotions
+from core.analyzer.dream_classifier import classify_dream
+from core.composer.response_builder import build_response
 
 app = FastAPI()
 
@@ -72,10 +72,14 @@ def sanitize_presence_reply(text: str) -> str:
 
     return t
 
-# Serve UI
-app.mount("/ui", StaticFiles(directory="frontend"), name="ui")
+# Serve UI (Local only, expects frontend folder to be next to backend)
+try:
+    app.mount("/ui", StaticFiles(directory="../frontend"), name="ui")
+except:
+    pass
+
 # Serve generated audio files
-app.mount("/ui/audio", StaticFiles(directory="frontend/audio"), name="audio")
+app.mount("/audio", StaticFiles(directory="static/audio"), name="audio")
 
 # Minimal in-memory session store (safe for development)
 SESSION = {
@@ -87,14 +91,14 @@ SESSION = {
 # Import and initialize once, but keep failure-safe so server runs without model
 PhiMini = None
 try:
-    from backend.llm.phi_wrapper import PhiMini
+    from llm.phi_wrapper import PhiMini
 except Exception as e:
     print(f"Warning: PhiMini loader failed: {e}")
     PhiMini = None
 
 # Prompts are always required - import them with error handling
 try:
-    from backend.llm.prompt import SYSTEM_GUARDRAILS, CHAT_PROMPT, PRESENCE_PROMPT
+    from llm.prompt import SYSTEM_GUARDRAILS, CHAT_PROMPT, PRESENCE_PROMPT
 except Exception as e:
     print(f"ERROR: Failed to load prompts from llm.prompt: {e}")
     raise RuntimeError("Critical: llm/prompt.py must be importable with SYSTEM_GUARDRAILS, CHAT_PROMPT, PRESENCE_PROMPT defined")
@@ -102,7 +106,7 @@ except Exception as e:
 phi = None
 if PhiMini is not None and os.getenv("PHI_ENABLED", "1") == "1":
     # Use the local GGUF file directly (recommended for your setup)
-    model_path = os.path.join("backend", "models", "Phi-3-mini-4k-instruct.Q4_0.gguf")
+    model_path = "models/Phi-3-mini-4k-instruct.Q4_0.gguf"
     try:
         phi = PhiMini(model_path)
         print(f"PhiMini loaded from {model_path}")
@@ -132,14 +136,17 @@ def phi_test(prompt: str = "Respond briefly and calmly. Response:", max_tokens: 
 
 @app.get("/")
 def serve_ui():
-    return FileResponse(os.path.join("frontend", "index.html"))
+    try:
+        return FileResponse(os.path.join("..", "frontend", "index.html"))
+    except:
+        return {"message": "Echo Backend API is running."}
 
 
 @app.get('/debug/jenny_test')
 def debug_jenny():
     """Attempt to synthesize a short Jenny phrase and return the file path or error."""
     try:
-        from backend.tts.voice_manager import synthesize_voice
+        from tts.voice_manager import synthesize_voice
         p = synthesize_voice("I am here. Just listening.", voice='she')
         return {"ok": True, "audio": p}
     except Exception as e:
@@ -166,7 +173,7 @@ def analyze_dream(data: DreamInput):
     # Synthesize server-side audio for the message (backend is authoritative)
     audio_path = None
     try:
-        from backend.tts.voice_manager import synthesize_voice
+        from tts.voice_manager import synthesize_voice
         audio_path = synthesize_voice(base_text, voice=voice)
     except Exception as e:
         print(f"TTS generation failed for m1: {e}")
@@ -209,7 +216,7 @@ def analyze_dream(data: DreamInput):
 
     # Sanitize generated text
     try:
-        from backend.core.safeguards.dependency_filter import sanitize
+        from core.safeguards.dependency_filter import sanitize
         presence_text = sanitize(presence_text)
     except Exception:
         pass
@@ -217,7 +224,7 @@ def analyze_dream(data: DreamInput):
     # Synthesize presence reply audio as well; non-fatal if synthesis fails
     presence_audio = None
     try:
-        from backend.tts.voice_manager import synthesize_voice
+        from tts.voice_manager import synthesize_voice
         presence_audio = synthesize_voice(presence_text, voice=voice)
     except Exception as e:
         print(f"TTS generation failed for presence reply: {e}")
@@ -240,7 +247,7 @@ def analyze_dream(data: DreamInput):
 def debug_male():
     """Attempt to synthesize a short male phrase and return the file path or error."""
     try:
-        from backend.tts.voice_manager import synthesize_voice
+        from tts.voice_manager import synthesize_voice
         p = synthesize_voice("This is a male voice test.", voice='he')
         return {"ok": True, "audio": p}
     except Exception as e:
@@ -297,7 +304,7 @@ def chat(data: ChatInput):
 
     # Sanitize and append assistant reply to history
     try:
-        from backend.core.safeguards.dependency_filter import sanitize
+        from core.safeguards.dependency_filter import sanitize
         reply = sanitize(reply)
     except Exception:
         pass
@@ -307,7 +314,7 @@ def chat(data: ChatInput):
     # Synthesize server-side audio (Jenny required for 'she')
     audio_path = None
     try:
-        from backend.tts.voice_manager import synthesize_voice
+        from tts.voice_manager import synthesize_voice
         audio_path = synthesize_voice(reply, voice=voice)
     except Exception as e:
         # If the user specifically requested 'she' and synthesis failed, respond with 500

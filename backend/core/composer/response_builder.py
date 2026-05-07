@@ -2,7 +2,7 @@
 import json
 
 def build_response(category, emotions):
-    with open(f"backend/core/templates/{category}.json") as f:
+    with open(f"core/templates/{category}.json") as f:
         template = json.load(f)
 
     response = (
