@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from core.safeguards.forbidden_phrases import FORBIDDEN
+from backend.core.safeguards.forbidden_phrases import FORBIDDEN
 
 def sanitize(text: str) -> str:
     lower = text.lower()

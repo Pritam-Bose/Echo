@@ -11,11 +11,12 @@ __pycache__/
 Thumbs.db
 
 # Models & weights
-models/*.gguf
-models/**/*.gguf
+backend/models/*.gguf
+backend/models/**/*.gguf
 
 # Generated audio
-ui/audio/*.wav
+frontend/audio/*.wav
+frontend/audio/*.mp3
 
 # Logs
 *.log
