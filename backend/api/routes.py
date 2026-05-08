@@ -105,17 +105,19 @@ except Exception as e:
 
 phi = None
 if PhiMini is not None and os.getenv("PHI_ENABLED", "1") == "1":
-    # Use the local GGUF file directly (recommended for your setup)
-    model_path = "models/Phi-3-mini-4k-instruct.Q4_0.gguf"
-    try:
-        phi = PhiMini(model_path)
-        print(f"PhiMini loaded from {model_path}")
-    except Exception as e:
+    # Use the local GGUF file directly
+    model_path = os.path.join("models", "Phi-3-mini-4k-instruct.Q4_0.gguf")
+    
+    if not os.path.exists(model_path):
+        print(f"Warning: Model file not found at {model_path}. PhiMini will be disabled.")
         phi = None
+    else:
         try:
-            print(f"PhiMini loader: failed to initialize with {model_path}: {e}")
-        except Exception:
-            pass
+            phi = PhiMini(model_path)
+            print(f"PhiMini loaded from {model_path}")
+        except Exception as e:
+            phi = None
+            print(f"PhiMini loader: failed to initialize: {e}")
 
 
 @app.get("/phi-test")
