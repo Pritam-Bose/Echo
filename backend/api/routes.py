@@ -1,18 +1,29 @@
 # -*- coding: utf-8 -*-
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from api.schemas import DreamInput, DreamResponse, Message, ChatInput
 from core.analyzer.emotion_extractor import extract_emotions
 from core.analyzer.dream_classifier import classify_dream
 from core.composer.response_builder import build_response
+from tts.voice_manager import synthesize_voice
 
 app = FastAPI()
 
-from threading import Lock
-MODEL_LOCK = Lock()
+
+def _tts(text: str, voice: str):
+    """Server-side synthesis; failures are non-fatal and return None."""
+    try:
+        return synthesize_voice(text, voice=voice)
+    except Exception as e:
+        print(f"TTS generation failed: {e}")
+        return None
 
 
 def sanitize_presence_reply(text: str) -> str:
@@ -74,7 +85,7 @@ def sanitize_presence_reply(text: str) -> str:
 
 # Serve UI (Local only, expects frontend folder to be next to backend)
 try:
-    app.mount("/ui", StaticFiles(directory="../frontend"), name="ui")
+    app.mount("/ui", StaticFiles(directory="../frontend", html=True), name="ui")
 except:
     pass
 
@@ -87,14 +98,8 @@ SESSION = {
     "history": []
 }
 
-# --- Phi-3 model (optional) ---
-# Import and initialize once, but keep failure-safe so server runs without model
-PhiMini = None
-try:
-    from llm.phi_wrapper import PhiMini
-except Exception as e:
-    print(f"Warning: PhiMini loader failed: {e}")
-    PhiMini = None
+# --- LLM (Groq cloud) ---
+from llm.groq_llm import GroqLLM
 
 # Prompts are always required - import them with error handling
 try:
@@ -103,56 +108,31 @@ except Exception as e:
     print(f"ERROR: Failed to load prompts from llm.prompt: {e}")
     raise RuntimeError("Critical: llm/prompt.py must be importable with SYSTEM_GUARDRAILS, CHAT_PROMPT, PRESENCE_PROMPT defined")
 
-phi = None
-if PhiMini is not None and os.getenv("PHI_ENABLED", "1") == "1":
-    # Use the local GGUF file directly
-    model_path = os.path.join("models", "Phi-3-mini-4k-instruct.Q4_0.gguf")
-    
-    if not os.path.exists(model_path):
-        print(f"Warning: Model file not found at {model_path}. PhiMini will be disabled.")
-        phi = None
-    else:
-        try:
-            phi = PhiMini(model_path)
-            print(f"PhiMini loaded from {model_path}")
-        except Exception as e:
-            phi = None
-            print(f"PhiMini loader: failed to initialize: {e}")
+if os.getenv("GROQ_API_KEY"):
+    llm = GroqLLM()
+    print(f"GroqLLM ready (model={llm.model})")
+else:
+    llm = None
+    print("Warning: GROQ_API_KEY not set; Echo will use fallback replies.")
 
 
-@app.get("/phi-test")
-def phi_test(prompt: str = "Respond briefly and calmly. Response:", max_tokens: int = 60):
-    """Quick test endpoint to verify the model is actually generating text.
-
-    If the model isn't loaded, returns an error message instead of raising.
-    """
-    if phi is None:
-        return {"ok": False, "error": "Model is not loaded"}
+@app.get("/llm-test")
+def llm_test(prompt: str = "Respond briefly and calmly.", max_tokens: int = 60):
+    """Smoke test: verify the Groq model actually generates text."""
+    if llm is None:
+        return {"ok": False, "error": "GROQ_API_KEY not set"}
 
     try:
-        gen = phi.generate(prompt, max_tokens=max_tokens)
-        return {"ok": True, "response": gen}
+        return {"ok": True, "response": llm.generate(prompt, max_tokens=max_tokens)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 @app.get("/")
 def serve_ui():
-    try:
-        return FileResponse(os.path.join("..", "frontend", "index.html"))
-    except:
-        return {"message": "Echo Backend API is running."}
+    # index.html loads ./chat.css and ./chat.js, so it must be served from the /ui mount
+    return RedirectResponse("/ui/")
 
-
-@app.get('/debug/jenny_test')
-def debug_jenny():
-    """Attempt to synthesize a short Jenny phrase and return the file path or error."""
-    try:
-        from tts.voice_manager import synthesize_voice
-        p = synthesize_voice("I am here. Just listening.", voice='she')
-        return {"ok": True, "audio": p}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
 
 @app.post("/dream", response_model=DreamResponse)
 def analyze_dream(data: DreamInput):
@@ -173,13 +153,7 @@ def analyze_dream(data: DreamInput):
 
     # Message 1 — neutral grounding (template)
     # Synthesize server-side audio for the message (backend is authoritative)
-    audio_path = None
-    try:
-        from tts.voice_manager import synthesize_voice
-        audio_path = synthesize_voice(base_text, voice=voice)
-    except Exception as e:
-        print(f"TTS generation failed for m1: {e}")
-        audio_path = None
+    audio_path = _tts(base_text, voice)
 
     messages.append(
         Message(
@@ -200,21 +174,13 @@ def analyze_dream(data: DreamInput):
         presence_prompt = PRESENCE_PROMPT.format(dream=dream_text)
 
     # Generate presence reply with phi if available (guarded)
-    if phi is not None and presence_prompt:
-        # Try to acquire model lock to avoid concurrent heavy runs
-        if not MODEL_LOCK.acquire(blocking=False):
-            # Model busy — skip model generation and keep deterministic presence_text (no busy message)
-            pass
-        else:
-            try:
-                gen = phi.generate(presence_prompt, max_tokens=60)
-                if gen:
-                    presence_text = sanitize_presence_reply(gen)
-            except Exception:
-                # keep fallback
-                pass
-            finally:
-                MODEL_LOCK.release()
+    if llm is not None and presence_prompt:
+        try:
+            gen = llm.generate(presence_prompt, max_tokens=60)
+            if gen:
+                presence_text = sanitize_presence_reply(gen)
+        except Exception:
+            pass  # keep the deterministic fallback
 
     # Sanitize generated text
     try:
@@ -223,14 +189,7 @@ def analyze_dream(data: DreamInput):
     except Exception:
         pass
 
-    # Synthesize presence reply audio as well; non-fatal if synthesis fails
-    presence_audio = None
-    try:
-        from tts.voice_manager import synthesize_voice
-        presence_audio = synthesize_voice(presence_text, voice=voice)
-    except Exception as e:
-        print(f"TTS generation failed for presence reply: {e}")
-        presence_audio = None
+    presence_audio = _tts(presence_text, voice)
 
     messages.append(
         Message(
@@ -244,16 +203,6 @@ def analyze_dream(data: DreamInput):
 
     return DreamResponse(messages=messages)
 
-
-@app.get('/debug/male_test')
-def debug_male():
-    """Attempt to synthesize a short male phrase and return the file path or error."""
-    try:
-        from tts.voice_manager import synthesize_voice
-        p = synthesize_voice("This is a male voice test.", voice='he')
-        return {"ok": True, "audio": p}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
 
 @app.post("/chat", response_model=DreamResponse)
 def chat(data: ChatInput):
@@ -282,23 +231,14 @@ def chat(data: ChatInput):
     
     prompt += CHAT_PROMPT.format(context=context, message=user_msg)
 
-    # Generate with phi if available (guarded)
-    if phi is not None:
-        # Acquire model lock to prevent overlapping heavy runs
-        if not MODEL_LOCK.acquire(blocking=False):
-            print("Model busy; rejecting overlapping request")
-            # Don't append placeholder messages in the UI — return 429 so frontend can hide loader and let user retry
-            raise HTTPException(status_code=429, detail="model_busy")
-        else:
-            try:
-                reply = phi.generate(prompt, max_tokens=150)
-            except Exception as e:
-                print(f"phi.generate failed: {e}")
-                reply = "Sorry, I couldn't generate a thoughtful reply right now."
-            finally:
-                MODEL_LOCK.release()
+    if llm is not None:
+        try:
+            reply = llm.generate(prompt, max_tokens=150)
+        except Exception as e:
+            print(f"llm.generate failed: {e}")
+            reply = "Sorry, I couldn't generate a thoughtful reply right now."
     else:
-        print("phi is not loaded; returning fallback reply")
+        print("llm is not loaded; returning fallback reply")
         reply = (
             "This thought seems connected to the feeling you described earlier. "
             "Notice how it relates to the same emotional pattern, without needing to resolve it immediately."
@@ -313,17 +253,9 @@ def chat(data: ChatInput):
 
     SESSION["history"].append(f"Echo: {reply}")
 
-    # Synthesize server-side audio (Jenny required for 'she')
-    audio_path = None
-    try:
-        from tts.voice_manager import synthesize_voice
-        audio_path = synthesize_voice(reply, voice=voice)
-    except Exception as e:
-        # If the user specifically requested 'she' and synthesis failed, respond with 500
-        if str(voice).lower() == "she":
-            print(f"Jenny TTS failed: {e}")
-            raise HTTPException(status_code=500, detail="tts_unavailable_for_she")
-        audio_path = None
+    audio_path = _tts(reply, voice)
+    if audio_path is None and str(voice).lower() == "she":
+        raise HTTPException(status_code=500, detail="tts_unavailable_for_she")
 
     return DreamResponse(messages=[
         Message(id="c1", text=reply, tts=True, audio=audio_path)

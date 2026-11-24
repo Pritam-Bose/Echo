@@ -17,6 +17,7 @@ backend/models/**/*.gguf
 # Generated audio
 frontend/audio/*.wav
 frontend/audio/*.mp3
+backend/static/audio/
 
 # Logs
 *.log
