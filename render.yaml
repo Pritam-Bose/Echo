@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: echo
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    # --app-dir puts backend/ on sys.path, so the app runs from the repo root
+    startCommand: uvicorn api.routes:app --host 0.0.0.0 --port $PORT --app-dir backend
+    healthCheckPath: /ui/
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GROQ_API_KEY
+        sync: false

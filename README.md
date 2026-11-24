@@ -26,3 +26,11 @@ echo GROQ_API_KEY=your_key_here > ../.env
 Then open http://localhost:8000/ (redirects to `/ui/`). `GET /llm-test` is a smoke test for the Groq connection.
 
 `.env` holds the API key and is gitignored — never commit it.
+
+## Deploying
+
+`render.yaml` describes a single Render web service that runs the whole app (API and UI together). Create it with Render's Blueprint flow, then set `GROQ_API_KEY` in the dashboard — it is deliberately not stored in the blueprint.
+
+All filesystem paths are anchored to their own module, so the server can start from any working directory. Render's start command uses `uvicorn --app-dir backend` from the repo root.
+
+Vercel is not a fit: it serves the static frontend only, its functions cannot persist the generated MP3s between requests, and the Hobby timeout is shorter than one dream takes.

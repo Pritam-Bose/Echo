@@ -6,7 +6,9 @@ import uuid
 
 import edge_tts
 
-AUDIO_DIR = os.path.join("static", "audio")
+AUDIO_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "audio"
+)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
 ATTEMPTS = 3

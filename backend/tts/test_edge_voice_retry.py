@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import edge_tts
 from tts import edge_voice
 
-AUDIO = os.path.join("static", "audio")
+AUDIO = edge_voice.AUDIO_DIR
 _real_sleep = edge_voice.time.sleep
 edge_voice.time.sleep = lambda s: None
 

@@ -83,14 +83,20 @@ def sanitize_presence_reply(text: str) -> str:
 
     return t
 
-# Serve UI (Local only, expects frontend folder to be next to backend)
+# Paths are anchored to this file so the app works from any working directory
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(os.path.dirname(BACKEND_DIR), "frontend")
+AUDIO_DIR = os.path.join(BACKEND_DIR, "static", "audio")
+os.makedirs(AUDIO_DIR, exist_ok=True)
+
+# Serve UI (frontend folder sits next to backend)
 try:
-    app.mount("/ui", StaticFiles(directory="../frontend", html=True), name="ui")
-except:
-    pass
+    app.mount("/ui", StaticFiles(directory=FRONTEND_DIR, html=True), name="ui")
+except Exception as e:
+    print(f"UI mount failed, frontend will not be served: {e}")
 
 # Serve generated audio files
-app.mount("/audio", StaticFiles(directory="static/audio"), name="audio")
+app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 # Minimal in-memory session store (safe for development)
 SESSION = {
